@@ -1,0 +1,1909 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>球球大作战 - 多人对战</title>
+  <!-- Tailwind CSS v3 -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Font Awesome -->
+  <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
+  <!-- 统一的 Tailwind 配置 -->
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            primary: '#4361ee',
+            secondary: '#3a0ca3',
+            accent: '#f72585',
+            success: '#4cc9f0',
+            warning: '#fca311',
+            danger: '#e63946',
+            light: '#f8f9fa',
+            dark: '#212529'
+          },
+          fontFamily: {
+            sans: ['Inter', 'system-ui', 'sans-serif'],
+          }
+        }
+      }
+    }
+  </script>
+  <style type="text/tailwindcss">
+    @layer utilities {
+      .text-shadow {
+        text-shadow: 0 2px 4px rgba(0,0,0,0.1);
+      }
+      .text-shadow-lg {
+        text-shadow: 0 4px 8px rgba(0,0,0,0.2);
+      }
+      .glass {
+        @apply bg-white bg-opacity-20 backdrop-blur-lg;
+      }
+      .glass-dark {
+        @apply bg-dark bg-opacity-20 backdrop-blur-lg;
+      }
+    }
+
+    /* 自定义样式 */
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      overflow: hidden;
+      touch-action: manipulation;
+      overscroll-behavior: none;
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    }
+
+    #gameCanvas {
+      display: block;
+      background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%);
+      background-image: 
+        radial-gradient(circle at 20% 30%, rgba(52, 211, 153, 0.2) 0%, transparent 50%),
+        radial-gradient(circle at 80% 70%, rgba(67, 97, 238, 0.2) 0%, transparent 50%),
+        radial-gradient(circle at 50% 50%, rgba(76, 201, 240, 0.1) 0%, transparent 70%);
+      pointer-events: none;
+      user-select: none;
+      touch-action: none;
+    }
+
+    .game-container {
+      position: relative;
+      width: 100%;
+      height: 100vh;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* 游戏主区域（中央） */
+    .game-area {
+      flex: 1;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .ui-overlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: 10;
+    }
+
+    .ui-overlay > * {
+      pointer-events: auto;
+    }
+
+    /* 右上角信息面板 */
+    .info-panel {
+      position: absolute;
+      top: 20px;
+      right: 20px;
+      display: flex;
+      flex-direction: column;
+      gap: 15px;
+      z-index: 20;
+    }
+
+    /* 玩家信息卡片 */
+    .player-info-card {
+      background: linear-gradient(135deg, rgba(52, 211, 153, 0.95), rgba(67, 97, 238, 0.95));
+      backdrop-filter: blur(15px);
+      border-radius: 20px;
+      padding: 18px 22px;
+      border: 3px solid rgba(255, 255, 255, 0.4);
+      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+      min-width: 240px;
+      color: white;
+    }
+
+    .player-info-card h3 {
+      font-size: 16px;
+      font-weight: 700;
+      margin-bottom: 12px;
+      opacity: 0.95;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .player-stats {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .stat-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 14px;
+      padding: 6px 0;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.2);
+    }
+
+    .stat-item:last-child {
+      border-bottom: none;
+    }
+
+    .stat-label {
+      opacity: 0.9;
+      font-weight: 500;
+    }
+
+    .stat-value {
+      font-weight: 800;
+      font-size: 16px;
+    }
+
+    .stat-value.score {
+      color: #fcd34d;
+      text-shadow: 0 0 15px rgba(252, 211, 77, 0.6);
+    }
+
+    .stat-value.size {
+      color: #34d399;
+      text-shadow: 0 0 15px rgba(52, 211, 153, 0.6);
+    }
+
+    .stat-value.rank {
+      color: #60a5fa;
+      text-shadow: 0 0 15px rgba(96, 165, 250, 0.6);
+    }
+
+    /* 排行榜卡片 */
+    .rank-card {
+      background: linear-gradient(135deg, rgba(255, 255, 255, 0.98), rgba(255, 255, 255, 0.95));
+      backdrop-filter: blur(15px);
+      border-radius: 20px;
+      padding: 18px;
+      border: 3px solid rgba(255, 255, 255, 0.5);
+      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+      min-width: 260px;
+      max-width: 300px;
+      max-height: 450px;
+    }
+
+    .rank-card h3 {
+      font-size: 18px;
+      font-weight: 800;
+      margin-bottom: 15px;
+      color: #1e40af;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+
+    .rank-list {
+      max-height: 380px;
+      overflow-y: auto;
+      scrollbar-width: thin;
+      scrollbar-color: rgba(67, 97, 238, 0.5) transparent;
+    }
+
+    .rank-list::-webkit-scrollbar {
+      width: 6px;
+    }
+
+    .rank-list::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    .rank-list::-webkit-scrollbar-thumb {
+      background: linear-gradient(135deg, #4361ee, #34d399);
+      border-radius: 3px;
+    }
+
+    .rank-item {
+      display: flex;
+      align-items: center;
+      padding: 10px 12px;
+      margin-bottom: 6px;
+      border-radius: 12px;
+      background: linear-gradient(135deg, rgba(67, 97, 238, 0.08), rgba(52, 211, 153, 0.08));
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      border: 2px solid transparent;
+    }
+
+    .rank-item:hover {
+      background: linear-gradient(135deg, rgba(67, 97, 238, 0.15), rgba(52, 211, 153, 0.15));
+      transform: translateX(6px) scale(1.02);
+      border-color: rgba(67, 97, 238, 0.3);
+    }
+
+    .rank-item.my-player {
+      background: linear-gradient(135deg, rgba(67, 97, 238, 0.25), rgba(52, 211, 153, 0.25));
+      border: 3px solid rgba(67, 97, 238, 0.6);
+      font-weight: 700;
+      box-shadow: 0 4px 15px rgba(67, 97, 238, 0.3);
+    }
+
+    .rank-number {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+      font-weight: 800;
+      margin-right: 12px;
+      color: white;
+      background: linear-gradient(135deg, #4361ee, #34d399);
+      box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+    }
+
+    .rank-number.top1 {
+      background: linear-gradient(135deg, #fcd34d, #fbbf24);
+      box-shadow: 0 4px 15px rgba(252, 211, 77, 0.5);
+    }
+
+    .rank-number.top2 {
+      background: linear-gradient(135deg, #cbd5e1, #94a3b8);
+      box-shadow: 0 4px 15px rgba(203, 213, 225, 0.5);
+    }
+
+    .rank-number.top3 {
+      background: linear-gradient(135deg, #f97316, #ea580c);
+      box-shadow: 0 4px 15px rgba(249, 115, 22, 0.5);
+    }
+
+    .rank-avatar {
+      width: 38px;
+      height: 38px;
+      border-radius: 50%;
+      margin-right: 12px;
+      border: 3px solid rgba(255, 255, 255, 0.6);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+    }
+
+    .rank-info {
+      flex-grow: 1;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .rank-name {
+      font-weight: 700;
+      font-size: 15px;
+      color: #1e40af;
+      margin-bottom: 4px;
+    }
+
+    .rank-name.dead {
+      color: #e63946;
+      text-decoration: line-through;
+      opacity: 0.7;
+    }
+
+    .rank-score {
+      font-size: 12px;
+      color: #64748b;
+      font-weight: 600;
+    }
+
+    /* 底部控制区 */
+    .control-area {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      width: 100%;
+      padding: 20px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 20px;
+      pointer-events: none;
+      z-index: 15;
+    }
+
+    .control-area > * {
+      pointer-events: auto;
+    }
+
+    /* 方向键控制 */
+    .directional-controls {
+      display: grid;
+      grid-template-columns: repeat(3, 60px);
+      grid-template-rows: repeat(3, 60px);
+      gap: 5px;
+      background: rgba(255, 255, 255, 0.3);
+      backdrop-filter: blur(15px);
+      padding: 10px;
+      border-radius: 20px;
+      border: 3px solid rgba(255, 255, 255, 0.5);
+      box-shadow: 0 8px 30px rgba(0, 0, 0, 0.2);
+    }
+
+    .direction-btn {
+      width: 60px;
+      height: 60px;
+      border-radius: 12px;
+      background: linear-gradient(135deg, rgba(67, 97, 238, 0.9), rgba(52, 211, 153, 0.9));
+      border: 3px solid rgba(255, 255, 255, 0.8);
+      color: white;
+      font-size: 24px;
+      font-weight: bold;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      touch-action: none;
+    }
+
+    .direction-btn:active {
+      transform: scale(0.9);
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+    }
+
+    .direction-btn.empty {
+      background: transparent;
+      border: none;
+      box-shadow: none;
+      cursor: default;
+      pointer-events: none;
+    }
+
+    /* 摇杆控制 */
+    .joystick {
+      width: 150px;
+      height: 150px;
+      position: relative;
+    }
+
+    .joystick-base {
+      position: absolute;
+      width: 100%;
+      height: 100%;
+      border-radius: 50%;
+      background: linear-gradient(135deg, rgba(255, 255, 255, 0.4), rgba(255, 255, 255, 0.2));
+      backdrop-filter: blur(15px);
+      border: 4px solid rgba(255, 255, 255, 0.7);
+      box-shadow: 0 8px 30px rgba(0, 0, 0, 0.2);
+    }
+
+    .joystick-handle {
+      position: absolute;
+      width: 80px;
+      height: 80px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, rgba(67, 97, 238, 0.95), rgba(52, 211, 153, 0.95));
+      backdrop-filter: blur(10px);
+      border: 4px solid rgba(255, 255, 255, 0.9);
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      touch-action: none;
+      box-shadow: 0 6px 20px rgba(67, 97, 238, 0.5);
+      transition: transform 0.1s ease-out;
+    }
+
+    /* 功能按钮 */
+    .action-buttons {
+      display: flex;
+      gap: 15px;
+      align-items: center;
+    }
+
+    .action-button {
+      width: 80px;
+      height: 80px;
+      border-radius: 50%;
+      backdrop-filter: blur(15px);
+      border: 4px solid rgba(255, 255, 255, 0.7);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-size: 32px;
+      touch-action: none;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      box-shadow: 0 6px 25px rgba(0, 0, 0, 0.2);
+      position: relative;
+      font-weight: bold;
+    }
+
+    .action-button:active {
+      transform: scale(0.85);
+    }
+
+    .action-button.split {
+      background: linear-gradient(135deg, rgba(247, 37, 133, 0.95), rgba(236, 72, 153, 0.95));
+    }
+
+    .action-button.split:hover {
+      box-shadow: 0 8px 30px rgba(247, 37, 133, 0.6);
+      transform: scale(1.05);
+    }
+
+    .action-button.merge {
+      background: linear-gradient(135deg, rgba(76, 201, 240, 0.95), rgba(52, 211, 153, 0.95));
+    }
+
+    .action-button.merge:hover {
+      box-shadow: 0 8px 30px rgba(76, 201, 240, 0.6);
+      transform: scale(1.05);
+    }
+
+    .action-button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    .action-button .key-hint {
+      position: absolute;
+      bottom: -25px;
+      font-size: 11px;
+      font-weight: 600;
+      color: #1e40af;
+      background: rgba(255, 255, 255, 0.9);
+      padding: 2px 8px;
+      border-radius: 8px;
+      white-space: nowrap;
+    }
+
+    /* 开始屏幕 */
+    .start-screen {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 50%, #f093fb 100%);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 20;
+      animation: fadeIn 0.5s ease;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+
+    .game-title {
+      font-size: 5.5rem;
+      font-weight: 900;
+      margin-bottom: 1rem;
+      text-align: center;
+      background: linear-gradient(90deg, #fff, #34d399, #4361ee, #fff);
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+      text-shadow: 0 0 40px rgba(255, 255, 255, 0.6);
+      animation: titleFloat 3s ease-in-out infinite;
+      letter-spacing: 3px;
+    }
+
+    @keyframes titleFloat {
+      0%, 100% { transform: translateY(0px); }
+      50% { transform: translateY(-25px); }
+    }
+
+    .game-subtitle {
+      font-size: 1.4rem;
+      color: rgba(255, 255, 255, 0.95);
+      margin-bottom: 3rem;
+      text-align: center;
+      font-weight: 400;
+      text-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+    }
+
+    .start-button {
+      padding: 20px 60px;
+      font-size: 1.6rem;
+      font-weight: 800;
+      background: linear-gradient(135deg, #34d399, #4361ee);
+      color: white;
+      border: none;
+      border-radius: 50px;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      box-shadow: 0 12px 35px rgba(0, 0, 0, 0.3);
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      border: 4px solid rgba(255, 255, 255, 0.5);
+    }
+
+    .start-button:hover {
+      transform: translateY(-6px) scale(1.08);
+      box-shadow: 0 18px 45px rgba(0, 0, 0, 0.4);
+      background: linear-gradient(135deg, #10b981, #3b82f6);
+    }
+
+    .start-button:active {
+      transform: translateY(-3px) scale(1.04);
+    }
+
+    .high-score-display {
+      margin-top: 25px;
+      padding: 18px 35px;
+      background: rgba(255, 255, 255, 0.25);
+      backdrop-filter: blur(15px);
+      border-radius: 20px;
+      color: white;
+      font-size: 1.1rem;
+      text-align: center;
+      border: 2px solid rgba(255, 255, 255, 0.4);
+    }
+
+    .high-score-value {
+      font-size: 1.8rem;
+      font-weight: 900;
+      color: #fcd34d;
+      margin-top: 8px;
+      text-shadow: 0 0 20px rgba(252, 211, 77, 0.8);
+    }
+
+    /* 提示消息 */
+    .toast-notification {
+      position: absolute;
+      top: 100px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 30;
+      background: linear-gradient(135deg, rgba(255, 255, 255, 0.98), rgba(255, 255, 255, 0.95));
+      backdrop-filter: blur(15px);
+      padding: 15px 30px;
+      border-radius: 15px;
+      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+      border: 3px solid rgba(67, 97, 238, 0.3);
+      display: none;
+      animation: slideDown 0.3s ease;
+    }
+
+    .toast-notification.show {
+      display: block;
+    }
+
+    @keyframes slideDown {
+      from {
+        opacity: 0;
+        transform: translateX(-50%) translateY(-20px);
+      }
+      to {
+        opacity: 1;
+        transform: translateX(-50%) translateY(0);
+      }
+    }
+
+    .toast-notification.success {
+      border-color: rgba(52, 211, 153, 0.5);
+    }
+
+    .toast-notification.warning {
+      border-color: rgba(252, 211, 77, 0.5);
+    }
+
+    .toast-notification.danger {
+      border-color: rgba(239, 68, 68, 0.5);
+    }
+
+    /* 重生倒计时 */
+    .respawn-countdown {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      z-index: 25;
+      background: linear-gradient(135deg, rgba(239, 68, 68, 0.95), rgba(220, 38, 38, 0.95));
+      color: white;
+      padding: 35px 70px;
+      border-radius: 25px;
+      font-size: 36px;
+      font-weight: 900;
+      text-align: center;
+      box-shadow: 0 15px 50px rgba(239, 68, 68, 0.6);
+      border: 4px solid rgba(255, 255, 255, 0.6);
+      display: none;
+    }
+
+    .respawn-countdown.active {
+      display: block;
+      animation: pulse 1s ease-in-out infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { transform: translate(-50%, -50%) scale(1); }
+      50% { transform: translate(-50%, -50%) scale(1.08); }
+    }
+
+    /* 游戏结束屏幕 */
+    .game-over-screen {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: linear-gradient(135deg, rgba(0, 0, 0, 0.95), rgba(30, 30, 30, 0.95));
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 20;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.5s ease;
+    }
+
+    .game-over-screen.active {
+      opacity: 1;
+      pointer-events: all;
+    }
+
+    .game-over-title {
+      font-size: 4.5rem;
+      font-weight: 900;
+      margin-bottom: 1.5rem;
+      color: white;
+      text-shadow: 0 0 40px rgba(247, 37, 133, 0.8);
+    }
+
+    .game-over-score {
+      font-size: 2.8rem;
+      margin-bottom: 1rem;
+      color: white;
+      font-weight: 700;
+    }
+
+    .game-over-best {
+      font-size: 1.4rem;
+      color: rgba(255, 255, 255, 0.8);
+      margin-bottom: 3rem;
+    }
+
+    .restart-button {
+      padding: 20px 60px;
+      font-size: 1.4rem;
+      font-weight: 800;
+      background: linear-gradient(135deg, #34d399, #4361ee);
+      color: white;
+      border: none;
+      border-radius: 50px;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      box-shadow: 0 12px 35px rgba(0, 0, 0, 0.3);
+      text-transform: uppercase;
+      letter-spacing: 2px;
+      border: 4px solid rgba(255, 255, 255, 0.5);
+    }
+
+    .restart-button:hover {
+      transform: translateY(-6px) scale(1.08);
+      box-shadow: 0 18px 45px rgba(0, 0, 0, 0.4);
+    }
+
+    /* 规则模态框 */
+    .rules-modal {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: linear-gradient(135deg, rgba(255, 255, 255, 0.98), rgba(255, 255, 255, 0.95));
+      border-radius: 25px;
+      padding: 45px;
+      max-width: 650px;
+      width: 90%;
+      z-index: 30;
+      box-shadow: 0 25px 70px rgba(0, 0, 0, 0.4);
+      opacity: 0;
+      pointer-events: none;
+      transition: all 0.3s ease;
+      max-height: 85vh;
+      overflow-y: auto;
+      border: 4px solid rgba(67, 97, 238, 0.3);
+    }
+
+    .rules-modal.active {
+      opacity: 1;
+      pointer-events: all;
+      transform: translate(-50%, -50%) scale(1);
+    }
+
+    .rules-title {
+      font-size: 2.2rem;
+      font-weight: 900;
+      margin-bottom: 25px;
+      color: #1e40af;
+      text-align: center;
+      background: linear-gradient(90deg, #4361ee, #34d399);
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+    }
+
+    .rules-list {
+      margin-bottom: 35px;
+    }
+
+    .rules-list li {
+      margin-bottom: 18px;
+      display: flex;
+      align-items: flex-start;
+      padding: 15px;
+      background: linear-gradient(135deg, rgba(67, 97, 238, 0.08), rgba(52, 211, 153, 0.08));
+      border-radius: 15px;
+      transition: all 0.3s ease;
+      border: 2px solid transparent;
+    }
+
+    .rules-list li:hover {
+      background: linear-gradient(135deg, rgba(67, 97, 238, 0.15), rgba(52, 211, 153, 0.15));
+      transform: translateX(8px);
+      border-color: rgba(67, 97, 238, 0.3);
+    }
+
+    .rules-list li i {
+      color: #34d399;
+      margin-right: 15px;
+      margin-top: 5px;
+      font-size: 20px;
+    }
+
+    .rules-list li strong {
+      color: #1e40af;
+      margin-right: 8px;
+      font-weight: 700;
+    }
+
+    .close-rules {
+      text-align: center;
+    }
+
+    .close-rules button {
+      padding: 15px 50px;
+      font-size: 1.1rem;
+      font-weight: 700;
+      background: linear-gradient(135deg, #34d399, #4361ee);
+      color: white;
+      border: none;
+      border-radius: 50px;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      box-shadow: 0 8px 20px rgba(0, 0, 0, 0.2);
+    }
+
+    .close-rules button:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
+    }
+
+    .rules-button {
+      position: absolute;
+      bottom: 20px;
+      right: 20px;
+      padding: 15px 30px;
+      background: rgba(255, 255, 255, 0.3);
+      backdrop-filter: blur(15px);
+      border-radius: 50px;
+      border: 3px solid rgba(255, 255, 255, 0.5);
+      color: white;
+      font-weight: 700;
+      cursor: pointer;
+      z-index: 15;
+      transition: all 0.3s ease;
+      font-size: 1rem;
+    }
+
+    .rules-button:hover {
+      background: rgba(255, 255, 255, 0.4);
+      transform: translateY(-3px);
+      box-shadow: 0 8px 20px rgba(0, 0, 0, 0.2);
+    }
+
+    /* 响应式设计 */
+    @media (max-width: 768px) {
+      .game-title {
+        font-size: 3.5rem;
+      }
+
+      .start-button {
+        padding: 18px 50px;
+        font-size: 1.3rem;
+      }
+
+      .player-info-card {
+        top: 10px;
+        right: 10px;
+        padding: 15px 18px;
+        min-width: 200px;
+        font-size: 12px;
+      }
+
+      .rank-card {
+        top: 10px;
+        right: 10px;
+        padding: 15px;
+        min-width: 200px;
+        max-width: 220px;
+      }
+
+      .joystick {
+        width: 130px;
+        height: 130px;
+      }
+
+      .joystick-handle {
+        width: 70px;
+        height: 70px;
+      }
+
+      .action-button {
+        width: 70px;
+        height: 70px;
+        font-size: 28px;
+      }
+
+      .direction-btn {
+        width: 50px;
+        height: 50px;
+        font-size: 20px;
+      }
+
+      .directional-controls {
+        grid-template-columns: repeat(3, 50px);
+        grid-template-rows: repeat(3, 50px);
+        padding: 8px;
+      }
+
+      .rank-item {
+        padding: 8px 10px;
+      }
+
+      .rank-avatar {
+        width: 32px;
+        height: 32px;
+      }
+
+      .rank-name {
+      font-size: 14px;
+      }
+
+      .rules-modal {
+        padding: 30px;
+      }
+    }
+
+    /* 键盘提示 */
+    .keyboard-hint {
+      position: absolute;
+      bottom: 150px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(255, 255, 255, 0.9);
+      backdrop-filter: blur(10px);
+      padding: 12px 20px;
+      border-radius: 12px;
+      font-size: 13px;
+      color: #1e40af;
+      font-weight: 600;
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+      display: none;
+      z-index: 16;
+      border: 2px solid rgba(67, 97, 238, 0.3);
+    }
+
+    .keyboard-hint.show {
+      display: block;
+    }
+
+    @media (hover: hover) {
+      .keyboard-hint {
+        display: block;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="game-container">
+    <!-- 游戏主区域 -->
+    <div class="game-area">
+    <canvas id="gameCanvas"></canvas>
+    
+    <div class="ui-overlay">
+        <!-- 右上角信息面板 -->
+        <div class="info-panel">
+          <!-- 玩家信息卡片 -->
+          <div class="player-info-card" id="playerInfoPanel">
+            <h3><i class="fa fa-user-circle"></i> 我的信息</h3>
+            <div class="player-stats">
+              <div class="stat-item">
+                <span class="stat-label">🏆 分数</span>
+                <span class="stat-value score" id="myScore">0</span>
+              </div>
+              <div class="stat-item">
+                <span class="stat-label">📏 大小</span>
+                <span class="stat-value size" id="mySize">30</span>
+              </div>
+              <div class="stat-item">
+                <span class="stat-label">🎯 排名</span>
+                <span class="stat-value rank" id="myRank">-</span>
+              </div>
+            </div>
+          </div>
+          
+          <!-- 排行榜卡片 -->
+          <div class="rank-card">
+            <h3><i class="fa fa-trophy"></i> 排行榜</h3>
+            <div class="rank-list" id="rankList">
+          <!-- 排行榜内容将由JS动态生成 -->
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      <!-- 底部控制区 -->
+      <div class="control-area">
+        <!-- 方向键控制 -->
+        <div class="directional-controls" id="directionalControls">
+          <div class="direction-btn empty"></div>
+          <div class="direction-btn" id="upBtn" data-direction="up">↑</div>
+          <div class="direction-btn empty"></div>
+          <div class="direction-btn" id="leftBtn" data-direction="left">←</div>
+          <div class="direction-btn empty"></div>
+          <div class="direction-btn" id="rightBtn" data-direction="right">→</div>
+          <div class="direction-btn empty"></div>
+          <div class="direction-btn" id="downBtn" data-direction="down">↓</div>
+          <div class="direction-btn empty"></div>
+        </div>
+        
+        <!-- 摇杆控制（移动端） -->
+        <div class="joystick" id="joystick">
+          <div class="joystick-base"></div>
+          <div class="joystick-handle" id="joystickHandle"></div>
+        </div>
+        
+        <!-- 功能按钮 -->
+        <div class="action-buttons">
+          <div class="action-button split" id="splitButton" title="分裂">
+            <i class="fa fa-cut"></i>
+            <span class="key-hint">空格</span>
+          </div>
+          <div class="action-button merge" id="mergeButton" title="合并">
+            <i class="fa fa-compress"></i>
+          </div>
+        </div>
+      </div>
+
+      <!-- 键盘提示 -->
+      <div class="keyboard-hint" id="keyboardHint">
+        💡 使用方向键或WASD控制移动，空格键分裂
+      </div>
+    </div>
+    
+    <!-- 开始屏幕 -->
+    <div class="start-screen" id="startScreen">
+      <h1 class="game-title">球球大作战</h1>
+      <p class="game-subtitle">多人实时对战 · 吞噬成长 · 争夺第一 🎮</p>
+      <button class="start-button" id="startButton">开始游戏</button>
+      <div class="high-score-display">
+        <div>🏆 最高分数</div>
+        <div class="high-score-value" id="highScore">0</div>
+      </div>
+      <button class="rules-button" id="rulesButton">
+        <i class="fa fa-question-circle"></i> 游戏规则
+      </button>
+    </div>
+    
+    <!-- 游戏结束屏幕 -->
+    <div class="game-over-screen" id="gameOverScreen">
+      <h2 class="game-over-title">游戏结束</h2>
+      <p class="game-over-score">最终得分: <span id="finalScore">0</span></p>
+      <p class="game-over-best">最高分数: <span id="finalBestScore">0</span></p>
+      <button class="restart-button" id="restartButton">再来一局</button>
+    </div>
+    
+    <!-- 规则模态框 -->
+    <div class="rules-modal" id="rulesModal">
+      <h3 class="rules-title">游戏规则</h3>
+      <ul class="rules-list">
+        <li>
+          <i class="fa fa-gamepad"></i>
+          <div>
+            <strong>控制方式：</strong>使用方向键/WASD或触摸摇杆控制小球移动方向，移动方向即为目标位置
+          </div>
+        </li>
+        <li>
+          <i class="fa fa-circle"></i>
+          <div>
+            <strong>吞噬规则：</strong>吞噬比自己小的球（食物或其他玩家）来增大体积和得分。体积越大，移动速度越慢哦～
+          </div>
+        </li>
+        <li>
+          <i class="fa fa-cut"></i>
+          <div>
+            <strong>分裂功能：</strong>点击分裂按钮或按空格键可以将小球分裂成多个，提高移动速度。分裂后5秒自动合并
+          </div>
+        </li>
+        <li>
+          <i class="fa fa-compress"></i>
+          <div>
+            <strong>合并功能：</strong>点击合并按钮可以提前将分裂的小球重新合并，恢复更大体积
+          </div>
+        </li>
+        <li>
+          <i class="fa fa-trophy"></i>
+          <div>
+            <strong>生存技巧：</strong>避免被比自己大的球吞噬，灵活运用分裂和合并策略，争夺排行榜第一！🏆
+          </div>
+        </li>
+        <li>
+          <i class="fa fa-heart"></i>
+          <div>
+            <strong>重生机制：</strong>被吞噬后等待30秒重生，名字会变红显示倒计时。重生后重新开始！
+          </div>
+        </li>
+      </ul>
+      <div class="close-rules">
+        <button id="closeRulesButton">我知道了</button>
+      </div>
+    </div>
+
+    <!-- 提示通知 -->
+    <div class="toast-notification" id="toastNotification"></div>
+
+    <!-- 重生倒计时 -->
+    <div class="respawn-countdown" id="respawnCountdown">
+      <div>💀 你被吞噬了！</div>
+      <div style="font-size: 28px; margin-top: 10px;">重生倒计时: <span id="respawnTime">30</span>秒</div>
+    </div>
+  </div>
+
+  <script>
+    // WebSocket 服务器地址
+    const WS_URL = 'ws://localhost:2345';
+    
+    // 游戏常量
+    let GAME_WIDTH = window.innerWidth;
+    let GAME_HEIGHT = window.innerHeight;
+    
+    // WebSocket 连接
+    let ws = null;
+    let myPlayerId = null;
+    let myPlayerName = '';
+    let gameState = {
+      players: [],
+      foods: [],
+      rankings: []
+    };
+    let cameraOffset = { x: 0, y: 0 };
+    let mapConfig = { width: 2000, height: 2000 };
+
+    // 游戏变量
+    let canvas, ctx;
+    let gameLoop;
+    let isConnected = false;
+    let respawnCountdown = 0;
+    let highScore = parseInt(localStorage.getItem('qiuqiu_high_score') || '0');
+
+    // 键盘控制变量
+    let keys = {};
+    let moveDirection = { x: 0, y: 0 };
+    let moveInterval = null;
+
+    // 触摸控制变量
+    let isTouching = false;
+    let joystickCenter = { x: 0, y: 0 };
+    let joystickRadius = 60;
+
+    // 初始化游戏
+    function initGame() {
+      canvas = document.getElementById('gameCanvas');
+      ctx = canvas.getContext('2d');
+      
+      // 设置Canvas尺寸
+      canvas.width = GAME_WIDTH;
+      canvas.height = GAME_HEIGHT;
+      
+      // 禁用canvas上的所有鼠标事件
+      canvas.style.pointerEvents = 'none';
+      canvas.style.cursor = 'default';
+      
+      // 明确阻止canvas上的鼠标移动事件
+      canvas.addEventListener('mousemove', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+      }, { passive: false });
+      
+      canvas.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+      }, { passive: false });
+      
+      canvas.addEventListener('mouseup', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+      }, { passive: false });
+      
+      // 显示最高分
+      document.getElementById('highScore').textContent = highScore;
+      
+      // 设置事件监听
+      setupEventListeners();
+      
+      // 窗口大小改变时重新调整
+      window.addEventListener('resize', () => {
+        GAME_WIDTH = window.innerWidth;
+        GAME_HEIGHT = window.innerHeight;
+        canvas.width = GAME_WIDTH;
+        canvas.height = GAME_HEIGHT;
+      });
+
+      // 隐藏键盘提示（移动端）
+      if ('ontouchstart' in window) {
+        document.getElementById('keyboardHint').style.display = 'none';
+        document.getElementById('directionalControls').style.display = 'none';
+      }
+    }
+
+    // 显示提示消息
+    function showToast(message, type = 'success') {
+      const toast = document.getElementById('toastNotification');
+      toast.textContent = message;
+      toast.className = `toast-notification ${type} show`;
+      
+      setTimeout(() => {
+        toast.classList.remove('show');
+      }, 3000);
+    }
+
+    // 连接WebSocket
+    function connectWebSocket() {
+      try {
+        ws = new WebSocket(WS_URL);
+        
+        ws.onopen = () => {
+          console.log('WebSocket连接已建立');
+          isConnected = true;
+          
+          // 设置玩家名称
+          const playerName = prompt('请输入您的名字:', '玩家' + Math.floor(Math.random() * 1000));
+          if (playerName && playerName.trim()) {
+            myPlayerName = playerName.trim();
+            sendMessage('set_name', { name: myPlayerName });
+          } else {
+            myPlayerName = '玩家' + Math.floor(Math.random() * 1000);
+            sendMessage('set_name', { name: myPlayerName });
+          }
+          
+          // 快速匹配
+          sendMessage('quick_match', {});
+          showToast('🎮 匹配成功！游戏开始！', 'success');
+        };
+        
+        ws.onmessage = (event) => {
+          try {
+            const message = JSON.parse(event.data);
+            handleServerMessage(message);
+          } catch (e) {
+            console.error('解析消息失败:', e);
+          }
+        };
+        
+        ws.onclose = () => {
+          console.log('WebSocket连接已关闭');
+          isConnected = false;
+          showToast('⚠️ 连接断开，正在重连...', 'warning');
+          // 尝试重连
+          setTimeout(connectWebSocket, 3000);
+        };
+        
+        ws.onerror = (error) => {
+          console.error('WebSocket错误:', error);
+          showToast('❌ 连接失败，请检查服务器', 'danger');
+        };
+      } catch (e) {
+        console.error('连接WebSocket失败:', e);
+        setTimeout(connectWebSocket, 3000);
+      }
+    }
+
+    // 发送消息到服务器
+    function sendMessage(event, data = {}) {
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ event, data }));
+      }
+    }
+
+    // 处理服务器消息
+    function handleServerMessage(message) {
+      console.log('收到服务器消息:', message.event, message.data);
+      
+      switch (message.event) {
+        case 'quick_match':
+          if (message.data.room_id) {
+            myPlayerId = message.data.player_id;
+            mapConfig = message.data.config || mapConfig;
+            console.log('匹配成功，玩家ID:', myPlayerId, '配置:', mapConfig);
+      document.getElementById('startScreen').style.display = 'none';
+            if (!gameLoop) {
+              gameLoop = requestAnimationFrame(updateGame);
+            }
+          }
+          break;
+        case 'game:state':
+          gameState = message.data;
+          console.log('游戏状态更新:', {
+            players: gameState.players?.length || 0,
+            foods: gameState.foods?.length || 0,
+            rankings: gameState.rankings?.length || 0
+          });
+          updateCamera();
+      updateRankings();
+          updatePlayerInfo();
+          break;
+        case 'player:joined':
+          // 如果有排行榜数据，立即更新排行榜
+          if (message.data.rankings) {
+            gameState.rankings = message.data.rankings;
+            updateRankings();
+          }
+          break;
+        case 'player:eaten':
+          if (message.data.playerId === myPlayerId) {
+            respawnCountdown = 30;
+            showRespawnCountdown();
+            showToast('💀 你被吞噬了！等待重生...', 'danger');
+            // 更新最终分数
+            const myPlayer = gameState.players.find(p => p.id === myPlayerId);
+            if (myPlayer) {
+              updateHighScore(myPlayer.score);
+            }
+          }
+          break;
+        case 'player:respawn':
+          if (message.data.playerId === myPlayerId) {
+            respawnCountdown = 0;
+            hideRespawnCountdown();
+            showToast('✨ 重生成功！继续战斗！', 'success');
+          }
+          break;
+        case 'error':
+          showToast('❌ ' + (message.data.message || '发生错误'), 'danger');
+          break;
+      }
+    }
+
+    // 更新相机位置（平滑跟随玩家）
+    function updateCamera() {
+      if (!myPlayerId) return;
+      
+      const myPlayer = gameState.players.find(p => p.id === myPlayerId);
+      if (myPlayer && !myPlayer.isDead) {
+        const targetX = myPlayer.x - GAME_WIDTH / 2;
+        const targetY = myPlayer.y - GAME_HEIGHT / 2;
+        
+        // 平滑插值
+        cameraOffset.x += (targetX - cameraOffset.x) * 0.1;
+        cameraOffset.y += (targetY - cameraOffset.y) * 0.1;
+        
+        // 限制相机范围
+        cameraOffset.x = Math.max(0, Math.min(mapConfig.width - GAME_WIDTH, cameraOffset.x));
+        cameraOffset.y = Math.max(0, Math.min(mapConfig.height - GAME_HEIGHT, cameraOffset.y));
+      }
+    }
+
+    // 更新玩家信息面板
+    function updatePlayerInfo() {
+      if (!myPlayerId) return;
+      
+      const myPlayer = gameState.players.find(p => p.id === myPlayerId);
+      if (myPlayer) {
+        document.getElementById('myScore').textContent = myPlayer.score || 0;
+        document.getElementById('mySize').textContent = Math.floor(myPlayer.size);
+        
+        // 更新排名
+        const myRankIndex = gameState.rankings.findIndex(r => r.id === myPlayerId);
+        if (myRankIndex !== -1) {
+          const rank = myRankIndex + 1;
+          document.getElementById('myRank').textContent = `#${rank}`;
+          
+          // 排名变化提示
+          if (rank === 1 && myPlayer.score > 0) {
+            showToast('🏆 恭喜！你是第一名！', 'success');
+          }
+        } else {
+          document.getElementById('myRank').textContent = '-';
+        }
+
+        // 更新最高分
+        updateHighScore(myPlayer.score);
+      }
+    }
+
+    // 更新最高分
+    function updateHighScore(score) {
+      if (score > highScore) {
+        const oldHigh = highScore;
+        highScore = score;
+        localStorage.setItem('qiuqiu_high_score', highScore.toString());
+        document.getElementById('highScore').textContent = highScore;
+        document.getElementById('finalBestScore').textContent = highScore;
+        if (oldHigh > 0) {
+          showToast(`🎉 新纪录！最高分: ${highScore}`, 'success');
+        }
+      }
+    }
+
+    // 显示重生倒计时
+    function showRespawnCountdown() {
+      const countdownElement = document.getElementById('respawnCountdown');
+      countdownElement.classList.add('active');
+    }
+
+    // 隐藏重生倒计时
+    function hideRespawnCountdown() {
+      const countdownElement = document.getElementById('respawnCountdown');
+      countdownElement.classList.remove('active');
+    }
+
+    // 处理键盘输入
+    function handleKeyboardMove() {
+      if (!myPlayerId || !isConnected) return;
+      
+      const myPlayer = gameState.players.find(p => p.id === myPlayerId);
+      if (!myPlayer || myPlayer.isDead) return;
+
+      let dx = 0, dy = 0;
+      const moveDistance = 500;
+
+      // 方向键或WASD
+      if (keys['ArrowUp'] || keys['w'] || keys['W']) dy -= moveDistance;
+      if (keys['ArrowDown'] || keys['s'] || keys['S']) dy += moveDistance;
+      if (keys['ArrowLeft'] || keys['a'] || keys['A']) dx -= moveDistance;
+      if (keys['ArrowRight'] || keys['d'] || keys['D']) dx += moveDistance;
+
+      if (dx !== 0 || dy !== 0) {
+        const targetX = myPlayer.x + dx;
+        const targetY = myPlayer.y + dy;
+        sendMessage('player:move', { x: targetX, y: targetY });
+      }
+    }
+
+    // 设置事件监听
+    function setupEventListeners() {
+      // 开始按钮
+      document.getElementById('startButton').addEventListener('click', () => {
+        connectWebSocket();
+      });
+      
+      // 键盘事件
+      document.addEventListener('keydown', (e) => {
+        keys[e.key] = true;
+        
+        // 空格键分裂
+        if (e.key === ' ' || e.key === 'Spacebar') {
+          e.preventDefault();
+          if (isConnected && myPlayerId) {
+            const myPlayer = gameState.players.find(p => p.id === myPlayerId);
+            if (myPlayer && !myPlayer.isDead && !myPlayer.isSplitting && myPlayer.size >= 40) {
+              sendMessage('player:split', {});
+              showToast('💥 分裂！', 'success');
+            }
+          }
+        }
+        
+        // 方向键移动
+        handleKeyboardMove();
+        
+        // 开始移动循环
+        if (!moveInterval && (keys['ArrowUp'] || keys['ArrowDown'] || keys['ArrowLeft'] || keys['ArrowRight'] ||
+            keys['w'] || keys['W'] || keys['s'] || keys['S'] || keys['a'] || keys['A'] || keys['d'] || keys['D'])) {
+          moveInterval = setInterval(handleKeyboardMove, 50);
+        }
+      });
+
+      document.addEventListener('keyup', (e) => {
+        keys[e.key] = false;
+        
+        // 停止移动循环
+        if (!keys['ArrowUp'] && !keys['ArrowDown'] && !keys['ArrowLeft'] && !keys['ArrowRight'] &&
+            !keys['w'] && !keys['W'] && !keys['s'] && !keys['S'] && !keys['a'] && !keys['A'] && !keys['d'] && !keys['D']) {
+          if (moveInterval) {
+            clearInterval(moveInterval);
+            moveInterval = null;
+          }
+        }
+      });
+      
+      // 方向键按钮
+      const directionButtons = {
+        'up': ['ArrowUp', 'w', 'W'],
+        'down': ['ArrowDown', 's', 'S'],
+        'left': ['ArrowLeft', 'a', 'A'],
+        'right': ['ArrowRight', 'd', 'D']
+      };
+
+      Object.keys(directionButtons).forEach(direction => {
+        const btn = document.getElementById(direction + 'Btn');
+        if (btn) {
+          btn.addEventListener('mousedown', () => {
+            keys[direction] = true;
+            handleKeyboardMove();
+            if (!moveInterval) {
+              moveInterval = setInterval(handleKeyboardMove, 50);
+            }
+          });
+          
+          btn.addEventListener('mouseup', () => {
+            keys[direction] = false;
+            if (!keys['up'] && !keys['down'] && !keys['left'] && !keys['right']) {
+              if (moveInterval) {
+                clearInterval(moveInterval);
+                moveInterval = null;
+              }
+            }
+          });
+          
+          btn.addEventListener('mouseleave', () => {
+            keys[direction] = false;
+            if (!keys['up'] && !keys['down'] && !keys['left'] && !keys['right']) {
+              if (moveInterval) {
+                clearInterval(moveInterval);
+                moveInterval = null;
+              }
+            }
+          });
+        }
+      });
+      
+      // 触摸控制 - 摇杆
+      const joystickHandle = document.getElementById('joystickHandle');
+      const joystick = document.getElementById('joystick');
+      
+      joystick.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        isTouching = true;
+        const rect = joystick.getBoundingClientRect();
+        joystickCenter = {
+          x: rect.left + rect.width / 2,
+          y: rect.top + rect.height / 2
+        };
+      });
+      
+      document.addEventListener('touchmove', (e) => {
+        if (!isTouching) return;
+        e.preventDefault();
+        
+        const touchX = e.touches[0].clientX;
+        const touchY = e.touches[0].clientY;
+        
+        let dx = touchX - joystickCenter.x;
+        let dy = touchY - joystickCenter.y;
+        
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        if (distance > joystickRadius) {
+          const angle = Math.atan2(dy, dx);
+          dx = Math.cos(angle) * joystickRadius;
+          dy = Math.sin(angle) * joystickRadius;
+        }
+        
+        joystickHandle.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
+        
+        if (distance > 10 && myPlayerId) {
+          const myPlayer = gameState.players.find(p => p.id === myPlayerId);
+          if (myPlayer) {
+            const normalizedDx = dx / joystickRadius;
+            const normalizedDy = dy / joystickRadius;
+            const targetX = myPlayer.x + normalizedDx * 500;
+            const targetY = myPlayer.y + normalizedDy * 500;
+            sendMessage('player:move', { x: targetX, y: targetY });
+          }
+        }
+      });
+      
+      document.addEventListener('touchend', () => {
+        if (isTouching) {
+          isTouching = false;
+          joystickHandle.style.transform = 'translate(-50%, -50%)';
+        }
+      });
+      
+      // 分裂按钮
+      const splitButton = document.getElementById('splitButton');
+      splitButton.addEventListener('click', () => {
+        if (isConnected && myPlayerId) {
+          const myPlayer = gameState.players.find(p => p.id === myPlayerId);
+          if (myPlayer && !myPlayer.isDead && !myPlayer.isSplitting && myPlayer.size >= 40) {
+            sendMessage('player:split', {});
+            showToast('💥 分裂！', 'success');
+          }
+        }
+      });
+      
+      splitButton.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        if (isConnected && myPlayerId) {
+          const myPlayer = gameState.players.find(p => p.id === myPlayerId);
+          if (myPlayer && !myPlayer.isDead && !myPlayer.isSplitting && myPlayer.size >= 40) {
+            sendMessage('player:split', {});
+            showToast('💥 分裂！', 'success');
+          }
+        }
+      });
+      
+      // 合并按钮
+      const mergeButton = document.getElementById('mergeButton');
+      mergeButton.addEventListener('click', () => {
+        if (isConnected && myPlayerId) {
+          const myPlayer = gameState.players.find(p => p.id === myPlayerId);
+          if (myPlayer && !myPlayer.isDead && myPlayer.isSplitting) {
+            sendMessage('player:merge', {});
+            showToast('🔗 合并！', 'success');
+          }
+        }
+      });
+      
+      mergeButton.addEventListener('touchstart', (e) => {
+        e.preventDefault();
+        if (isConnected && myPlayerId) {
+          const myPlayer = gameState.players.find(p => p.id === myPlayerId);
+          if (myPlayer && !myPlayer.isDead && myPlayer.isSplitting) {
+            sendMessage('player:merge', {});
+            showToast('🔗 合并！', 'success');
+          }
+        }
+      });
+      
+      // 更新按钮状态
+      setInterval(() => {
+        if (myPlayerId) {
+          const myPlayer = gameState.players.find(p => p.id === myPlayerId);
+          if (myPlayer) {
+            splitButton.disabled = myPlayer.isDead || myPlayer.isSplitting || myPlayer.size < 40;
+            mergeButton.disabled = myPlayer.isDead || !myPlayer.isSplitting;
+          }
+        }
+      }, 100);
+      
+      // 游戏规则按钮
+      document.getElementById('rulesButton').addEventListener('click', () => {
+        document.getElementById('rulesModal').classList.add('active');
+      });
+      
+      document.getElementById('closeRulesButton').addEventListener('click', () => {
+        document.getElementById('rulesModal').classList.remove('active');
+      });
+      
+      // 点击模态框外部关闭
+      document.getElementById('rulesModal').addEventListener('click', (e) => {
+        if (e.target.id === 'rulesModal') {
+          document.getElementById('rulesModal').classList.remove('active');
+        }
+      });
+      
+      // 重新开始按钮
+      document.getElementById('restartButton').addEventListener('click', () => {
+        document.getElementById('gameOverScreen').classList.remove('active');
+        document.getElementById('startScreen').style.display = 'flex';
+        sendMessage('quick_match', {});
+      });
+    }
+
+    // 更新游戏（渲染循环）
+    function updateGame() {
+      if (!isConnected) {
+        gameLoop = requestAnimationFrame(updateGame);
+        return;
+      }
+      
+      // 清除画布
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      
+      // 绘制背景
+      drawBackground();
+      
+      // 绘制食物
+      drawFoods();
+      
+      // 绘制玩家
+      drawPlayers();
+      
+      // 更新重生倒计时
+      if (respawnCountdown > 0) {
+        respawnCountdown -= 0.016; // 每帧减少约16ms
+        const countdownElement = document.getElementById('respawnCountdown');
+        const timeElement = document.getElementById('respawnTime');
+        if (countdownElement && timeElement) {
+          const seconds = Math.ceil(respawnCountdown);
+          timeElement.textContent = seconds;
+          if (seconds <= 0) {
+            hideRespawnCountdown();
+          }
+        }
+      }
+      
+      // 继续渲染循环
+      gameLoop = requestAnimationFrame(updateGame);
+    }
+
+    // 绘制背景
+    function drawBackground() {
+      // 渐变背景
+      const gradient = ctx.createLinearGradient(0, 0, GAME_WIDTH, GAME_HEIGHT);
+      gradient.addColorStop(0, '#a8edea');
+      gradient.addColorStop(0.5, '#fed6e3');
+      gradient.addColorStop(1, '#a8edea');
+      ctx.fillStyle = gradient;
+      ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+      
+      // 绘制网格背景
+      ctx.strokeStyle = 'rgba(67, 97, 238, 0.08)';
+      ctx.lineWidth = 1;
+      const gridSize = 50;
+      const startX = -(cameraOffset.x % gridSize);
+      const startY = -(cameraOffset.y % gridSize);
+      
+      for (let x = startX; x < GAME_WIDTH; x += gridSize) {
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, GAME_HEIGHT);
+        ctx.stroke();
+      }
+      
+      for (let y = startY; y < GAME_HEIGHT; y += gridSize) {
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(GAME_WIDTH, y);
+        ctx.stroke();
+      }
+    }
+
+    // 绘制食物
+    function drawFoods() {
+      if (!gameState.foods || gameState.foods.length === 0) {
+        return;
+      }
+      
+      gameState.foods.forEach(food => {
+        const screenX = food.x - cameraOffset.x;
+        const screenY = food.y - cameraOffset.y;
+        
+        // 只绘制在屏幕内的食物
+        if (screenX > -food.size && screenX < GAME_WIDTH + food.size &&
+            screenY > -food.size && screenY < GAME_HEIGHT + food.size) {
+          
+          // 创建渐变（蓝色到绿色）
+        const gradient = ctx.createRadialGradient(
+            screenX - food.size * 0.3, screenY - food.size * 0.3, 0,
+            screenX, screenY, food.size
+          );
+          
+          // 根据食物大小使用不同颜色
+          const hue = (food.size * 20) % 360;
+          gradient.addColorStop(0, `hsl(${hue}, 80%, 70%)`);
+          gradient.addColorStop(0.6, `hsl(${hue + 60}, 70%, 60%)`);
+          gradient.addColorStop(1, `hsl(${hue + 120}, 60%, 50%)`);
+        
+        ctx.fillStyle = gradient;
+        ctx.beginPath();
+          ctx.arc(screenX, screenY, food.size, 0, Math.PI * 2);
+        ctx.fill();
+        
+          // 高光效果
+          ctx.fillStyle = 'rgba(255, 255, 255, 0.7)';
+        ctx.beginPath();
+          ctx.arc(screenX - food.size * 0.3, screenY - food.size * 0.3, food.size * 0.35, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      });
+    }
+
+    // 绘制玩家
+    function drawPlayers() {
+      if (!gameState.players || gameState.players.length === 0) {
+        return;
+      }
+      
+      // 按大小排序，大的先绘制（在底层）
+      const sortedPlayers = [...gameState.players].sort((a, b) => a.size - b.size);
+      
+      sortedPlayers.forEach(player => {
+        const screenX = player.x - cameraOffset.x;
+        const screenY = player.y - cameraOffset.y;
+        
+        // 只绘制在屏幕内的玩家
+        if (screenX > -player.size && screenX < GAME_WIDTH + player.size &&
+            screenY > -player.size && screenY < GAME_HEIGHT + player.size) {
+          
+          if (player.isSplitting && player.splitBalls && player.splitBalls.length > 0) {
+            // 绘制分裂小球
+            player.splitBalls.forEach(ball => {
+              const ballX = ball.x - cameraOffset.x;
+              const ballY = ball.y - cameraOffset.y;
+              if (ballX > -ball.size && ballX < GAME_WIDTH + ball.size &&
+                  ballY > -ball.size && ballY < GAME_HEIGHT + ball.size) {
+                drawBall(ballX, ballY, ball.size, ball.color);
+              }
+            });
+          } else {
+            // 绘制玩家主体
+            drawBall(screenX, screenY, player.size, player.color);
+            
+            // 绘制名字（死亡状态变红）
+            const fontSize = Math.max(12, Math.min(18, player.size / 2));
+            ctx.fillStyle = player.isDead ? '#e63946' : 'white';
+            ctx.font = `bold ${fontSize}px Arial`;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+            ctx.strokeStyle = 'rgba(0, 0, 0, 0.6)';
+            ctx.lineWidth = 3;
+            ctx.strokeText(player.name, screenX, screenY - player.size - 18);
+            ctx.fillText(player.name, screenX, screenY - player.size - 18);
+            
+            // 如果是我自己，绘制外圈
+            if (player.id === myPlayerId) {
+              ctx.strokeStyle = 'rgba(67, 97, 238, 0.9)';
+              ctx.lineWidth = 4;
+              ctx.setLineDash([8, 4]);
+              ctx.beginPath();
+              ctx.arc(screenX, screenY, player.size + 4, 0, Math.PI * 2);
+              ctx.stroke();
+              ctx.setLineDash([]);
+            }
+          }
+        }
+      });
+    }
+
+    // 绘制小球（使用蓝绿渐变色）
+    function drawBall(x, y, size, color) {
+      // 将颜色转换为HSL并调整（蓝色到绿色）
+      const r = parseInt(color.slice(1, 3), 16);
+      const g = parseInt(color.slice(3, 5), 16);
+      const b = parseInt(color.slice(5, 7), 16);
+      
+      // 转换为HSL
+      const max = Math.max(r, g, b) / 255;
+      const min = Math.min(r, g, b) / 255;
+      const l = (max + min) / 2;
+      let h, s;
+      
+      if (max === min) {
+        h = s = 0;
+      } else {
+        const d = max - min;
+        s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+        if (max === r / 255) {
+          h = ((g / 255 - b / 255) / d + (g < b ? 6 : 0)) / 6;
+        } else if (max === g / 255) {
+          h = ((b / 255 - r / 255) / d + 2) / 6;
+        } else {
+          h = ((r / 255 - g / 255) / d + 4) / 6;
+        }
+      }
+      
+      // 调整为蓝绿色调（180-210度）
+      const targetHue = 180 + (h * 360) % 30; // 180-210度范围
+      
+      // 主体渐变（蓝色到绿色）
+          const gradient = ctx.createRadialGradient(
+        x - size * 0.3, y - size * 0.3, 0,
+        x, y, size
+      );
+      gradient.addColorStop(0, `hsl(${targetHue}, 85%, 85%)`);
+      gradient.addColorStop(0.4, `hsl(${targetHue + 30}, 75%, 70%)`);
+      gradient.addColorStop(0.7, `hsl(${targetHue + 60}, 70%, 60%)`);
+      gradient.addColorStop(1, `hsl(${targetHue + 90}, 65%, 50%)`);
+          
+          ctx.fillStyle = gradient;
+          ctx.beginPath();
+      ctx.arc(x, y, size, 0, Math.PI * 2);
+          ctx.fill();
+          
+      // 外圈
+      ctx.strokeStyle = `hsl(${targetHue + 60}, 70%, 40%)`;
+      ctx.lineWidth = Math.max(3, size / 8);
+          ctx.beginPath();
+      ctx.arc(x, y, size, 0, Math.PI * 2);
+          ctx.stroke();
+      
+      // 高光
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+      ctx.beginPath();
+      ctx.arc(x - size * 0.3, y - size * 0.3, size * 0.35, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // 更新排行榜
+    function updateRankings() {
+      const rankList = document.getElementById('rankList');
+      rankList.innerHTML = '';
+      
+      if (!gameState.rankings || gameState.rankings.length === 0) {
+        rankList.innerHTML = '<div style="text-align: center; color: #64748b; padding: 20px; font-weight: 600;">暂无排名</div>';
+        return;
+      }
+      
+      gameState.rankings.forEach((player, index) => {
+        const rankItem = document.createElement('div');
+        rankItem.className = 'rank-item';
+        
+        // 如果是当前玩家，添加特殊样式
+        if (player.id === myPlayerId) {
+          rankItem.classList.add('my-player');
+        }
+        
+        // 排名数字
+        const rankNumber = document.createElement('div');
+        rankNumber.className = 'rank-number';
+        if (index === 0) rankNumber.classList.add('top1');
+        else if (index === 1) rankNumber.classList.add('top2');
+        else if (index === 2) rankNumber.classList.add('top3');
+        rankNumber.textContent = index + 1;
+        
+        // 头像
+        const avatar = document.createElement('div');
+        avatar.className = 'rank-avatar';
+        avatar.style.backgroundColor = player.color;
+        avatar.style.backgroundImage = `radial-gradient(circle at 30% 30%, rgba(255,255,255,0.6), ${player.color})`;
+        
+        // 信息
+        const info = document.createElement('div');
+        info.className = 'rank-info';
+        
+        const name = document.createElement('div');
+        name.className = 'rank-name';
+        if (player.isDead) name.classList.add('dead');
+        name.textContent = player.name;
+        if (player.id === myPlayerId) {
+          name.textContent = '👤 ' + player.name;
+        }
+        
+        const score = document.createElement('div');
+        score.className = 'rank-score';
+        score.textContent = `分数: ${player.score || 0} | 大小: ${Math.floor(player.size)}`;
+        
+        info.appendChild(name);
+        info.appendChild(score);
+        
+        rankItem.appendChild(rankNumber);
+        rankItem.appendChild(avatar);
+        rankItem.appendChild(info);
+        rankList.appendChild(rankItem);
+      });
+    }
+
+    // 初始化游戏
+    window.onload = initGame;
+  </script>
+</body>
+</html>
