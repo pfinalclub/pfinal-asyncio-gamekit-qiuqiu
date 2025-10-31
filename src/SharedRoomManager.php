@@ -80,14 +80,21 @@ class SharedRoomManager
     /**
      * 更新房间元数据（同时同步房间状态）
      */
-    public function updateRoomMeta(Room $room): void
+    public function updateRoomMeta(Room $room, bool $isReplica = false): void
     {
         $roomId = $room->getId();
         $meta = $this->storage->get($this->roomMetaPrefix . $roomId);
         
         if ($meta) {
             $meta['status'] = $room->getStatus();
-            $meta['player_count'] = $room->getPlayerCount();
+            
+            // 只有原始房间（非副本）才更新全局玩家数量
+            // 房间副本只更新状态，不更新玩家数量（避免覆盖全局数量）
+            if (!$isReplica) {
+                $meta['player_count'] = $room->getPlayerCount();
+                $meta['worker_id'] = $this->workerId; // 更新 worker_id
+            }
+            
             $this->storage->set($this->roomMetaPrefix . $roomId, $meta, 86400);
         } else {
             // 如果没有元数据，重新注册
@@ -95,6 +102,7 @@ class SharedRoomManager
         }
         
         // 同步房间状态（如果是 GameRoom）
+        // 注意：所有房间（包括副本）都更新状态，因为需要同步玩家位置等信息
         if ($room instanceof \App\GameRoom) {
             $state = $room->getState();
             $this->storage->set($this->roomStatePrefix . $roomId, $state, 3600); // 1小时过期

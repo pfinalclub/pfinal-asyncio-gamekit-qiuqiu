@@ -7,6 +7,7 @@ use PfinalClub\AsyncioGamekit\Player as BasePlayer;
 use PfinalClub\AsyncioGamekit\Exceptions\RoomException;
 use function PfinalClub\Asyncio\{sleep, create_task};
 use Generator;
+use GatewayWorker\Lib\Gateway;
 
 /**
  * 球球大作战游戏房间
@@ -21,7 +22,7 @@ class GameRoom extends Room
     private const UPDATE_INTERVAL = 33; // 约30fps
     private ?SpatialGrid $spatialGrid = null;
     private $gameLoopTask = null; // 保存游戏循环任务引用，用于清理
-    private $stateSyncCallback = null; // 状态同步回调函数
+    // 已采用 GatewayWorker 单进程路由，无需副本/状态同步回调
 
     public function __construct(string $id, array $config = [])
     {
@@ -71,25 +72,91 @@ class GameRoom extends Room
      */
     public function restoreState(array $state): void
     {
-        // 恢复玩家状态
-        $this->gamePlayers = [];
-        if (isset($state['players'])) {
-            foreach ($state['players'] as $playerId => $playerData) {
-                $player = new Player($playerId, $playerData['name']);
-                $player->x = $playerData['x'];
-                $player->y = $playerData['y'];
-                $player->size = $playerData['size'];
-                $player->color = $playerData['color'];
-                $player->isDead = $playerData['isDead'] ?? false;
-                $player->respawnTime = $playerData['respawnTime'] ?? 0;
-                $player->isSplitting = $playerData['isSplitting'] ?? false;
-                $player->splitBalls = $playerData['splitBalls'] ?? [];
-                $player->score = $playerData['score'] ?? 0;
-                $this->gamePlayers[$playerId] = $player;
+        // 如果是房间副本，需要保留本地玩家的状态
+        $localPlayerIds = [];
+        if ($this->isReplica) {
+            // 获取当前房间中的所有玩家ID（本地玩家）
+            foreach ($this->getPlayers() as $player) {
+                $localPlayerIds[] = $player->getId();
             }
         }
         
-        // 恢复食物状态
+        // 恢复玩家状态
+        // 如果是房间副本，保留本地玩家状态，只更新其他玩家
+        if ($this->isReplica && !empty($localPlayerIds)) {
+            // 保留本地玩家，只更新其他玩家
+            $playersToKeep = [];
+            foreach ($localPlayerIds as $localId) {
+                if (isset($this->gamePlayers[$localId])) {
+                    $playersToKeep[$localId] = $this->gamePlayers[$localId];
+                }
+            }
+            
+            // 更新其他玩家状态（从 SQLite）
+            if (isset($state['players'])) {
+                foreach ($state['players'] as $playerId => $playerData) {
+                    // 跳过本地玩家
+                    if (in_array($playerId, $localPlayerIds)) {
+                        continue;
+                    }
+                    
+                    // 更新或创建其他玩家
+                    if (isset($this->gamePlayers[$playerId])) {
+                        // 更新现有玩家状态
+                        $player = $this->gamePlayers[$playerId];
+                        $player->x = $playerData['x'];
+                        $player->y = $playerData['y'];
+                        $player->size = $playerData['size'];
+                        $player->color = $playerData['color'];
+                        $player->isDead = $playerData['isDead'] ?? false;
+                        $player->respawnTime = $playerData['respawnTime'] ?? 0;
+                        $player->isSplitting = $playerData['isSplitting'] ?? false;
+                        $player->splitBalls = $playerData['splitBalls'] ?? [];
+                        $player->score = $playerData['score'] ?? 0;
+                    } else {
+                        // 创建新玩家
+                        $player = new Player($playerId, $playerData['name']);
+                        $player->x = $playerData['x'];
+                        $player->y = $playerData['y'];
+                        $player->size = $playerData['size'];
+                        $player->color = $playerData['color'];
+                        $player->isDead = $playerData['isDead'] ?? false;
+                        $player->respawnTime = $playerData['respawnTime'] ?? 0;
+                        $player->isSplitting = $playerData['isSplitting'] ?? false;
+                        $player->splitBalls = $playerData['splitBalls'] ?? [];
+                        $player->score = $playerData['score'] ?? 0;
+                        $this->gamePlayers[$playerId] = $player;
+                    }
+                }
+            }
+            
+            // 移除不在状态中的其他玩家（已离开）
+            foreach ($this->gamePlayers as $playerId => $player) {
+                if (!in_array($playerId, $localPlayerIds) && !isset($state['players'][$playerId])) {
+                    unset($this->gamePlayers[$playerId]);
+                }
+            }
+        } else {
+            // 原始房间或没有本地玩家，完全恢复状态
+            $this->gamePlayers = [];
+            if (isset($state['players'])) {
+                foreach ($state['players'] as $playerId => $playerData) {
+                    $player = new Player($playerId, $playerData['name']);
+                    $player->x = $playerData['x'];
+                    $player->y = $playerData['y'];
+                    $player->size = $playerData['size'];
+                    $player->color = $playerData['color'];
+                    $player->isDead = $playerData['isDead'] ?? false;
+                    $player->respawnTime = $playerData['respawnTime'] ?? 0;
+                    $player->isSplitting = $playerData['isSplitting'] ?? false;
+                    $player->splitBalls = $playerData['splitBalls'] ?? [];
+                    $player->score = $playerData['score'] ?? 0;
+                    $this->gamePlayers[$playerId] = $player;
+                }
+            }
+        }
+        
+        // 恢复食物状态（所有房间都同步食物）
         $this->foods = [];
         if (isset($state['foods'])) {
             foreach ($state['foods'] as $foodId => $foodData) {
@@ -100,7 +167,7 @@ class GameRoom extends Room
         }
         
         $this->lastFoodSpawnTime = $state['lastFoodSpawnTime'] ?? time();
-        $this->lastStateUpdateTime = $state['lastStateUpdateTime'] ?? (int)(microtime(true) * 1000);
+        // 不覆盖 lastStateUpdateTime，保持本地时间戳
     }
 
     /**
@@ -160,6 +227,7 @@ class GameRoom extends Room
             // 初始化时间戳
             $this->lastStateUpdateTime = (int)(microtime(true) * 1000);
             $this->lastFoodSpawnTime = time();
+            $this->lastStateReadTime = $this->lastStateUpdateTime; // 初始化状态读取时间
 
             // 游戏主循环
             while (true) {
@@ -268,6 +336,23 @@ class GameRoom extends Room
             'playerId' => $playerId,
             'totalPlayers' => count($this->gamePlayers)
         ]);
+    }
+
+    /**
+     * 重命名玩家（更新房间内显示与排行榜）
+     */
+    public function renamePlayer(BasePlayer $player, string $newName): void
+    {
+        $playerId = $player->getId();
+        if (isset($this->gamePlayers[$playerId])) {
+            $this->gamePlayers[$playerId]->name = $newName;
+            // 广播重命名并同步最新排行榜
+            $this->broadcast('player:renamed', [
+                'playerId' => $playerId,
+                'name' => $newName,
+                'rankings' => $this->calculateRankings()
+            ]);
+        }
     }
 
     public function onPlayerMessage(BasePlayer $player, string $event, mixed $data): mixed
@@ -463,12 +548,38 @@ class GameRoom extends Room
         }
     }
 
+    // 已移除副本/状态同步相关接口
+    
     /**
-     * 设置状态同步回调函数
+     * 重写广播方法，使用 Gateway 进行跨进程广播
      */
-    public function setStateSyncCallback(callable $callback): void
+    public function broadcast(string $event, mixed $data = null, ?BasePlayer $except = null): void
     {
-        $this->stateSyncCallback = $callback;
+        // 检查是否在 GatewayWorker 环境下
+        if (class_exists('GatewayWorker\Lib\Gateway')) {
+            // 使用 Gateway 进行跨进程广播
+            $message = json_encode([
+                'event' => $event,
+                'data' => $data
+            ]);
+            
+            // 通过房间 ID 广播给所有在房间中的玩家（跨进程）
+            // 注意：Gateway::sendToGroup 不支持排除特定玩家，如果需要排除，需要单独处理
+            if ($except === null) {
+                Gateway::sendToGroup($this->getId(), $message);
+            } else {
+                // 如果需要排除某个玩家，获取所有玩家并逐个发送
+                $players = $this->getPlayers();
+                foreach ($players as $player) {
+                    if ($player->getId() !== $except->getId()) {
+                        Gateway::sendToClient($player->getId(), $message);
+                    }
+                }
+            }
+        } else {
+            // 回退到基类的广播方法（单进程模式）
+            parent::broadcast($event, $data, $except);
+        }
     }
     
     /**
@@ -514,15 +625,7 @@ class GameRoom extends Room
             'timestamp' => (int)(microtime(true) * 1000)
         ]);
         
-        // 同步状态到共享存储（如果有回调函数）
-        if ($this->stateSyncCallback) {
-            try {
-                ($this->stateSyncCallback)($this);
-            } catch (\Exception $e) {
-                // 静默处理错误，避免影响游戏循环
-                error_log("Failed to sync room state: " . $e->getMessage());
-            }
-        }
+        // 单进程路由模式下，无需将状态持续写回共享存储
     }
 
     /**

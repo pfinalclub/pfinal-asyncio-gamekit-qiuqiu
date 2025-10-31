@@ -3,7 +3,7 @@
 return [
     'host' => '0.0.0.0',
     'port' => 2345,
-    'worker_count' => 1,
+    'worker_count' => 4, // 多进程模式（BusinessWorker 进程数）
     'sqlite' => [
         'db_path' => __DIR__ . '/../storage/shared.db',
         'prefix' => 'qiuqiu:',
