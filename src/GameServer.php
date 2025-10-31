@@ -227,46 +227,8 @@ class GameServer extends BaseGameServer
                 }
                 
                 // 如果本地也没有房间，但共享存储中有元数据，说明房间在其他 Worker
-                // 在当前 Worker 创建一个同名房间副本，并从共享存储恢复状态
-                try {
-                    echo "[QuickMatch] Room {$roomId} exists in other Worker ({$availableRoomMeta['worker_id']}), creating replica in current Worker (" . getmypid() . ")\n";
-                    
-                    // 在当前 Worker 创建同名房间（使用相同的房间ID）
-                    $room = $this->sharedRoomManager->getLocalRoomManager()->createRoom(
-                        GameRoom::class, 
-                        $roomId, // 使用相同的房间ID
-                        $this->gameConfig['game']
-                    );
-                    
-                    // 从共享存储恢复房间状态
-                    $stateRestored = $this->sharedRoomManager->restoreRoomState($room);
-                    if ($stateRestored) {
-                        echo "[QuickMatch] Room state restored from shared storage\n";
-                    } else {
-                        echo "[QuickMatch] No room state found in shared storage, using fresh state\n";
-                    }
-                    
-                    // 重新注册到共享存储（更新 worker_id 为当前 Worker）
-                    $this->sharedRoomManager->updateRoomMeta($room);
-                    
-                    // 设置状态同步回调
-                    $this->createRoomWithSync($room);
-                    
-                    // 让玩家加入
-                    $this->getRoomManager()->joinRoom($player, $roomId);
-                    $this->sharedRoomManager->updateRoomMeta($room);
-                    
-                    $player->send('quick_match', [
-                        'room_id' => $roomId,
-                        'player_id' => $player->getId(),
-                        'config' => $room->getConfig()
-                    ]);
-                    echo "[QuickMatch] Player {$player->getId()} joined room {$roomId} (replica created in Worker " . getmypid() . ")\n";
-                    return;
-                } catch (\Exception $e) {
-                    echo "[QuickMatch] Failed to create room replica {$roomId}: {$e->getMessage()}\n";
-                    // 如果创建失败（可能房间ID冲突），继续创建新房间
-                }
+                // 单进程稳定模式下不创建房间副本，直接走创建新房间流程
+                echo "[QuickMatch] Room {$roomId} exists in other Worker ({$availableRoomMeta['worker_id']}), creating a new room locally instead.\n";
             }
             
             // 没有可用房间或加入失败，创建新房间
