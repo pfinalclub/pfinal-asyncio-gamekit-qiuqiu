@@ -10,6 +10,7 @@ class Events
 {
     private static ?SharedRoomManager $shared = null;
     private static ?RoomManager $roomManager = null;
+    private static array $clientNames = [];
 
     public static function onWorkerStart($businessWorker)
     {
@@ -57,7 +58,7 @@ class Events
                 break;
 
             case 'quick_match':
-                self::handleQuickMatch($clientId);
+                self::handleQuickMatch($clientId, $data);
                 break;
 
             case 'player:move':
@@ -78,8 +79,15 @@ class Events
 
     private static function handleSetName(string $clientId, array $data): void
     {
-        $name = $data['name'] ?? ('玩家' . rand(100, 999));
+        $raw = $data['name'] ?? ($data['nickname'] ?? ($data['username'] ?? ($data['nick'] ?? '')));
+        $name = trim((string)$raw);
+        if ($name === '') {
+            $name = '玩家' . rand(100, 999);
+        }
+        // 限长与简单过滤
+        $name = mb_substr($name, 0, 20);
         Gateway::updateSession($clientId, ['name' => $name]);
+        self::$clientNames[$clientId] = $name;
         Gateway::sendToClient($clientId, json_encode([
             'event' => 'set_name', 
             'data' => ['success' => true, 'name' => $name]
@@ -96,9 +104,18 @@ class Events
         }
     }
 
-    private static function handleQuickMatch(string $clientId): void
+    private static function handleQuickMatch(string $clientId, array $data = []): void
     {
         $maxPlayers = 50;
+
+        // 若 quick_match 携带 name，优先使用
+        $raw = $data['name'] ?? ($data['nickname'] ?? ($data['username'] ?? ($data['nick'] ?? '')));
+        $name = trim((string)$raw);
+        if ($name !== '') {
+            $name = mb_substr($name, 0, 20);
+            Gateway::updateSession($clientId, ['name' => $name]);
+            self::$clientNames[$clientId] = $name;
+        }
         
         // 查找可用房间（按 room_数字 顺序优先填满第一个房间，再开第二个房间）
         $availableRoomMeta = null;
@@ -218,9 +235,9 @@ class Events
             Gateway::bindUid($clientId, $roomId);
             Gateway::joinGroup($clientId, $roomId);
             
-            // 获取玩家名称
+            // 获取玩家名称（优先本进程缓存，其次 Session）
             $session = Gateway::getSession($clientId);
-            $playerName = $session['name'] ?? ('玩家' . rand(100, 999));
+            $playerName = self::$clientNames[$clientId] ?? ($session['name'] ?? ('玩家' . rand(100, 999)));
             
             // 创建玩家对象
             $player = new BasePlayer($clientId, $playerName);
@@ -276,9 +293,9 @@ class Events
         }
         
         // 创建临时玩家对象（RoomManager 没有 getPlayer 方法，我们需要从房间获取或创建临时对象）
-        // 获取玩家名称
-        $session = Gateway::getSession($clientId);
-        $playerName = $session['name'] ?? ('玩家' . rand(100, 999));
+            // 获取玩家名称（优先本进程缓存，其次 Session）
+            $session = Gateway::getSession($clientId);
+            $playerName = self::$clientNames[$clientId] ?? ($session['name'] ?? ('玩家' . rand(100, 999)));
         
         // 创建临时玩家对象用于消息处理
         $player = new BasePlayer($clientId, $playerName);
@@ -316,13 +333,9 @@ class Events
             if ($room instanceof GameRoom) {
                 $playerCountBefore = $room->getPlayerCount();
                 
-                // 创建临时玩家对象用于离开房间
-                $player = new BasePlayer($clientId, '');
-                
-                // 离开房间
+                // 强制移除该玩家，避免刷新后残留球体
                 try {
-                    self::$roomManager->leaveRoom($player);
-                    
+                    $room->disconnectPlayerById($clientId);
                     $playerCountAfter = $room->getPlayerCount();
                     echo "[onClose] Player {$clientId} left room {$roomId}. Player count: {$playerCountBefore} -> {$playerCountAfter}\n";
 
@@ -351,6 +364,8 @@ class Events
         if (isset($roomId)) {
             Gateway::unbindUid($clientId, $roomId);
         }
+        // 清理名称缓存
+        unset(self::$clientNames[$clientId]);
     }
     
     /**

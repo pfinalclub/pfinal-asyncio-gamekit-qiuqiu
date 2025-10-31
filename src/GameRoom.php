@@ -355,6 +355,25 @@ class GameRoom extends Room
         }
     }
 
+    /**
+     * 断线强制移除玩家，避免残留球体
+     */
+    public function disconnectPlayerById(string $playerId): void
+    {
+        // 从基础玩家列表移除
+        if (isset($this->players[$playerId])) {
+            unset($this->players[$playerId]);
+        }
+        // 从游戏实体列表移除
+        if (isset($this->gamePlayers[$playerId])) {
+            unset($this->gamePlayers[$playerId]);
+            $this->broadcast('player:left', [
+                'playerId' => $playerId,
+                'totalPlayers' => count($this->gamePlayers)
+            ]);
+        }
+    }
+
     public function onPlayerMessage(BasePlayer $player, string $event, mixed $data): mixed
     {
         $playerId = $player->getId();
